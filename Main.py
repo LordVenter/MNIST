@@ -4,8 +4,10 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torch.nn import Module, Linear, Conv2d, ReLU, MaxPool2d
-from torch.nn.functional import l1_loss, mse_loss
+from torch.nn.functional import mse_loss
 import torch.optim as optim
+
+from math import floor
 
 import matplotlib.pyplot as plt
 
@@ -26,21 +28,26 @@ def to_categorical(tensor:Tensor, num_classes=None):
 def convToLinCalc(input_size:tuple, layers) -> np.array:
     size = np.array(input_size)
     for layer in layers:
-        size = (size + 2*np.array(layer.padding) - np.array(layer.dilation) * (np.array(layer.kernel_size) - 1) - 1) / np.array(layer.stride) + 1
+        size[1:] = (size[1:] + 2*np.array(layer.padding) - np.array(layer.dilation) * (np.array(layer.kernel_size) - 1) - 1) / np.array(layer.stride) + 1
+        if type(layer) == Conv2d:
+            size[0] = layer.out_channels
     return size
 
 
 class Net(Module):
 
-    def __init__(self):
+    def __init__(self, first_conv_size=(4, 4), second_conv_size=(8,8)):
         super().__init__()
-        self.conv1 = Conv2d(1, 16, 5)
-        self.conv2 = Conv2d(16, 64, 5)
+        self.cs1 = first_conv_size
+        self.cs2 = second_conv_size
+        self.conv1 = Conv2d(1, self.cs1[0] * self.cs1[1], 5)
+        self.conv2 = Conv2d(self.cs1[0] * self.cs1[1], self.cs2[0] * self.cs2[1], 5)
         self.pool = MaxPool2d(2)
 
-        out_size = convToLinCalc((28, 28), [self.conv1, self.pool, self.conv2, self.pool])
+        out_size = convToLinCalc((1, 28, 28), [self.conv1, self.pool, self.conv2, self.pool])
+        print(out_size)
 
-        self.feature_size = int(np.prod(out_size) * 64)
+        self.feature_size = int(np.prod(out_size))
 
         self.l1 = Linear(self.feature_size, 10)
         self.relu = ReLU()
@@ -48,35 +55,30 @@ class Net(Module):
     def forward(self, input, show=False):
         out = input
         if show:
-            out.to('cpu')
             a = out.detach()
             print(out.shape)
             plt.imshow(a[0].view(28, 28), cmap='gray')
             plt.show()
-            out.to('cuda')
         out = self.pool(self.relu(self.conv1(out.view(-1, 1, 28, 28))))
         if show:
-            out.to('cpu')
-            a = out[0][0]
-            for i in out[0][1:]:
-                a += i
-            plt.imshow(a.detach().view(12, 12), cmap='gray')
+            a = out[0].detach()
+            f, axarr = plt.subplots(*self.cs1)
+            for i, tensor in enumerate(a):
+                axarr[floor(i/self.cs1[1]), i%self.cs1[1]].imshow(tensor.view(12, 12), cmap='gray')
             plt.show()
-            out.to('cuda')
         out = self.pool(self.relu(self.conv2(out)))
         if show:
-            out.to('cpu')
-            a = out[0][0]
-            for i in out[0][1:]:
-                a += i
-            plt.imshow(a.detach().view(4, 4), cmap='gray')
+            a = out[0].detach()
+            f, axarr = plt.subplots(*self.cs2)
+            print()
+            for i, tensor in enumerate(a):
+                axarr[floor(i/self.cs2[1]), i%self.cs2[1]].imshow(tensor.view(4, 4), cmap='gray')
             plt.show()
-            out.to('cuda')
         out = self.relu(self.l1(out.view(-1, self.feature_size)))
         return out
 
 
-net = Net()
+net = Net((4, 5))
 optimizer = optim.SGD(net.parameters(), 0.01)
 
 for i in train_loader:
@@ -95,16 +97,19 @@ for i in train_loader:
     optimizer.step()
     #print(loss)
 
-
+running_count = 0
+running_correct_count = 0
 for i in test_loader:
     data, label = i
 
-    output = np.argmax(net(data, False).detach(), 1)
+    output = np.argmax(net(data, True).detach(), 1)
 
-    print(output)
-    print(label)
-    print(output - label)
+    correct_count = 0
+    for t in output - label:
+        if t == 0:
+            correct_count += 1
+    running_correct_count += correct_count
+    running_count += 1
+    print(round(100 * correct_count/test_loader.batch_size, 2))
+    print(round(100 * running_correct_count/(running_count*test_loader.batch_size), 2))
     print()
-
-    plt.imshow(data[0].view(28, 28), cmap='gray')
-    plt.show()
