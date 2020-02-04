@@ -1,4 +1,5 @@
 import numpy as np
+from torch.distributions import one_hot_categorical
 from torch import Tensor
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
@@ -31,6 +32,20 @@ def to_categorical(y, num_classes=None, dtype='float32'):
     return categorical
 
 
+def to_categorical(tensor:Tensor, num_classes=None):
+    newtensor = []
+    for t in tensor:
+        newtensor.append(np.eye(num_classes)[t])
+    return Tensor(newtensor)
+
+
+def convToLinCalc(input_size:tuple, layers) -> np.array:
+    size = np.array(input_size)
+    for layer in layers:
+        size = (size + 2*np.array(layer.padding) - np.array(layer.dilation) * (np.array(layer.kernel_size) - 1) - 1) / np.array(layer.stride) + 1
+    return size
+
+
 class Net(Module):
 
     def __init__(self):
@@ -39,14 +54,40 @@ class Net(Module):
         self.conv2 = Conv2d(16, 64, 5)
         self.pool = MaxPool2d(2)
 
-        self.feature_size = 4 * 4 * 64
+        out_size = convToLinCalc((28, 28), [self.conv1, self.pool, self.conv2, self.pool])
+
+        self.feature_size = int(np.prod(out_size) * 64)
 
         self.l1 = Linear(self.feature_size, 10)
-        self.relu = ReLU(False)
+        self.relu = ReLU()
 
-    def forward(self, input):
-        out = self.pool(self.relu(self.conv1(input.view(-1, 1, 28, 28))))
+    def forward(self, input, show=False):
+        out = input
+        if show:
+            out.to('cpu')
+            a = out.detach()
+            print(out.shape)
+            plt.imshow(a[0].view(28, 28), cmap='gray')
+            plt.show()
+            out.to('cuda')
+        out = self.pool(self.relu(self.conv1(out.view(-1, 1, 28, 28))))
+        if show:
+            out.to('cpu')
+            a = out[0][0]
+            for i in out[0][1:]:
+                a += i
+            plt.imshow(a.detach().view(12, 12), cmap='gray')
+            plt.show()
+            out.to('cuda')
         out = self.pool(self.relu(self.conv2(out)))
+        if show:
+            out.to('cpu')
+            a = out[0][0]
+            for i in out[0][1:]:
+                a += i
+            plt.imshow(a.detach().view(4, 4), cmap='gray')
+            plt.show()
+            out.to('cuda')
         out = self.relu(self.l1(out.view(-1, self.feature_size)))
         return out
 
@@ -74,9 +115,12 @@ for i in train_loader:
 for i in test_loader:
     data, label = i
 
-    output = np.argmax(net(data[0]).detach())
+    output = np.argmax(net(data, False).detach(), 1)
 
     print(output)
+    print(label)
+    print(output - label)
+    print()
 
     plt.imshow(data[0].view(28, 28), cmap='gray')
     plt.show()
