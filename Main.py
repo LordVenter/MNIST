@@ -84,7 +84,7 @@ optimizer = optim.Adam(net.parameters(), 0.0001)
 scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
 
 
-def train(model, device, train_loader, optimizer, epoch, log_interval=200):
+def train(model, device, train_loader, optimizer, epoch, log_interval=20):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
