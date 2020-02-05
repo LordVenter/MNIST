@@ -3,9 +3,9 @@ from math import floor
 import matplotlib.pyplot as plt
 import numpy as np
 import torch.optim as optim
-from torch import Tensor
-from torch.nn import Module, Linear, Conv2d, ReLU, MaxPool2d
-from torch.nn.functional import mse_loss
+from torch import Tensor, no_grad
+from torch.nn import Module, Linear, Conv2d, ReLU, MaxPool2d, Dropout2d
+from torch.nn.functional import mse_loss, nll_loss
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
@@ -39,8 +39,10 @@ class Net(Module):
         super().__init__()
         self.cs1 = first_conv_size
         self.cs2 = second_conv_size
-        self.conv1 = Conv2d(1, self.cs1[0] * self.cs1[1], 5)
-        self.conv2 = Conv2d(self.cs1[0] * self.cs1[1], self.cs2[0] * self.cs2[1], 5)
+        self.conv1 = Conv2d(1, self.cs1[0] * self.cs1[1], 3, 1)
+        self.conv2 = Conv2d(self.cs1[0] * self.cs1[1], self.cs2[0] * self.cs2[1], 3, 1)
+        self.dropout1 = Dropout2d(0.25)
+        self.dropout2 = Dropout2d(0.5)
         self.pool = MaxPool2d(2)
 
         out_size = convToLinCalc((1, 28, 28), [self.conv1, self.pool, self.conv2, self.pool])
@@ -48,7 +50,8 @@ class Net(Module):
 
         self.feature_size = int(np.prod(out_size))
 
-        self.l1 = Linear(self.feature_size, 10)
+        self.l1 = Linear(self.feature_size, 128)
+        self.l2 = Linear(128, 10)
         self.relu = ReLU()
 
     def forward(self, input, show=False):
@@ -58,7 +61,7 @@ class Net(Module):
             a.to('cpu')
             plt.imshow(a[0].view(28, 28), cmap='gray')
             plt.show()
-        out = self.pool(self.relu(self.conv1(out.view(-1, 1, 28, 28))))
+        out = self.dropout1(self.pool(self.relu(self.conv1(out.view(-1, 1, 28, 28)))))
         if show:
             a = out[0].detach()
             a.to('cpu')
@@ -66,7 +69,7 @@ class Net(Module):
             for i, tensor in enumerate(a):
                 axarr[floor(i/self.cs1[1]), i%self.cs1[1]].imshow(tensor.view(12, 12), cmap='gray')
             plt.show()
-        out = self.pool(self.relu(self.conv2(out)))
+        out = self.dropout2(self.pool(self.relu(self.conv2(out))))
         if show:
             a = out[0].detach()
             a.to('cpu')
@@ -75,10 +78,11 @@ class Net(Module):
                 axarr[floor(i/self.cs2[1]), i%self.cs2[1]].imshow(tensor.view(4, 4), cmap='gray')
             plt.show()
         out = self.relu(self.l1(out.view(-1, self.feature_size)))
+        out = self.relu(self.l2(out))
         return out
 
 
-net = Net((4, 5), (9, 9)).to('cuda')
+net = Net((4, 8), (8, 8)).to('cuda')
 optimizer = optim.Adam(net.parameters(), 0.0001)
 
 scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
@@ -96,16 +100,34 @@ def train(model, device, train_loader, optimizer, epoch, log_interval=20):
         if batch_idx % log_interval == 0:
             print(f'Train Epoch: {epoch+1} [{batch_idx * len(data)}/{len(train_loader.dataset)} ({round(100 * batch_idx / len(train_loader))}%)]\tLoss: {loss.item()}')
 
+def test(model, device, test_loader):
+    model.eval()
+    test_loss = 0
+    correct = 0
+    with no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            test_loss += nll_loss(output, target, reduction='sum').item()  # sum up batch loss
+            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+            correct += pred.eq(target.view_as(pred)).sum().item()
+
+    test_loss /= len(test_loader.dataset)
+
+    print(f'\nTest set: Average loss: {test_loss}, Accuracy: {correct}/{len(test_loader.dataset)} ({100. * correct / len(test_loader.dataset)}%)\n')
+
 
 for epoch in range(5):
     train(net, 'cuda', train_loader, optimizer, epoch, 100)
+    test(net, 'cuda', train_loader)
+    test(net, 'cuda', test_loader)
     scheduler.step()
-    print()
 
+exit()
 running_count = 0
 running_correct_count = 0
-for i in test_loader:
-    data, label = i
+net.eval()
+for data, label in test_loader:
 
     output = np.argmax(net(data.to('cuda'), False).to('cpu').detach(), 1)
 
