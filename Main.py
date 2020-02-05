@@ -1,16 +1,14 @@
-import numpy as np
-from torch.distributions import one_hot_categorical
-from torch import Tensor
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-from torch.nn import Module, Linear, Conv2d, ReLU, MaxPool2d
-from torch.nn.functional import mse_loss
-import torch.optim as optim
-import os
-
 from math import floor
 
 import matplotlib.pyplot as plt
+import numpy as np
+import torch.optim as optim
+from torch import Tensor
+from torch.nn import Module, Linear, Conv2d, ReLU, MaxPool2d
+from torch.nn.functional import mse_loss
+from torch.optim.lr_scheduler import StepLR
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
 
 batch_size = 50
 
@@ -19,11 +17,11 @@ train_loader = DataLoader(datasets.MNIST('../data', train=True, download=True, t
 test_loader = DataLoader(datasets.MNIST('../data', train=False, transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize((0,), (1,))])), batch_size=batch_size, shuffle=True)
 
 
-def to_categorical(tensor:Tensor, num_classes=None):
+def to_categorical(tensor:Tensor, num_classes=None, device='cuda'):
     newtensor = []
     for t in tensor:
         newtensor.append(np.eye(num_classes)[t])
-    return Tensor(newtensor)
+    return Tensor(newtensor).to(device)
 
 
 def convToLinCalc(input_size:tuple, layers) -> np.array:
@@ -81,23 +79,28 @@ class Net(Module):
 
 
 net = Net((4, 5), (9, 9)).to('cuda')
-#optimizer = optim.SGD(net.parameters(), 0.01, momentum=0.9)
 optimizer = optim.Adam(net.parameters(), 0.0001)
 
-for i in train_loader:
-    data, label = i
+scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
 
-    optimizer.zero_grad()
 
-    output = net(data.to('cuda'))
-    target = Tensor(to_categorical(label, 10)).to('cuda')
+def train(model, device, train_loader, optimizer, epoch, log_interval=200):
+    model.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        loss = mse_loss(output, to_categorical(target, 10))
+        loss.backward()
+        optimizer.step()
+        if batch_idx % log_interval == 0:
+            print(f'Train Epoch: {epoch+1} [{batch_idx * len(data)}/{len(train_loader.dataset)} ({round(100 * batch_idx / len(train_loader))}%)]\tLoss: {loss.item()}')
 
-    # print(output)
-    # print(target)
 
-    loss = mse_loss(output, target)
-    loss.backward()
-    optimizer.step()
+for epoch in range(5):
+    train(net, 'cuda', train_loader, optimizer, epoch, 100)
+    scheduler.step()
+    print()
 
 running_count = 0
 running_correct_count = 0

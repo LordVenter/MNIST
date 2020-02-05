@@ -133,3 +133,6 @@ dmypy.json
 
 # Test files
 /Test.py
+
+# Save files
+/mnist_cnn.pt
