@@ -1,6 +1,3 @@
-from math import floor
-
-import matplotlib.pyplot as plt
 import numpy as np
 import torch.optim as optim
 from torch import Tensor, no_grad
@@ -39,10 +36,13 @@ class Net(Module):
         super().__init__()
         self.cs1 = first_conv_size
         self.cs2 = second_conv_size
-        self.conv1 = Conv2d(1, self.cs1[0] * self.cs1[1], 3, 1)
-        self.conv2 = Conv2d(self.cs1[0] * self.cs1[1], self.cs2[0] * self.cs2[1], 3, 1)
+
+        self.conv1 = Conv2d(1, self.cs1[0] * self.cs1[1], 3)
         self.dropout1 = Dropout2d(0.25)
+        self.conv2 = Conv2d(self.cs1[0] * self.cs1[1], self.cs2[0] * self.cs2[1], 3)
         self.dropout2 = Dropout2d(0.5)
+        #self.conv2 = Conv2d(self.cs1[0] * self.cs1[1], self.cs2[0] * self.cs2[1], 3, 1)
+        #self.dropout2 = Dropout2d(0.5)
         self.pool = MaxPool2d(2)
 
         out_size = convToLinCalc((1, 28, 28), [self.conv1, self.pool, self.conv2, self.pool])
@@ -54,32 +54,12 @@ class Net(Module):
         self.l2 = Linear(128, 10)
         self.relu = ReLU()
 
-    def forward(self, input, show=False):
-        out = input
-        if show:
-            a = out.detach()
-            a.to('cpu')
-            plt.imshow(a[0].view(28, 28), cmap='gray')
-            plt.show()
-        out = self.dropout1(self.pool(self.relu(self.conv1(out.view(-1, 1, 28, 28)))))
-        if show:
-            a = out[0].detach()
-            a.to('cpu')
-            f, axarr = plt.subplots(*self.cs1)
-            for i, tensor in enumerate(a):
-                axarr[floor(i/self.cs1[1]), i%self.cs1[1]].imshow(tensor.view(12, 12), cmap='gray')
-            plt.show()
-        out = self.dropout2(self.pool(self.relu(self.conv2(out))))
-        if show:
-            a = out[0].detach()
-            a.to('cpu')
-            f, axarr = plt.subplots(*self.cs2)
-            for i, tensor in enumerate(a):
-                axarr[floor(i/self.cs2[1]), i%self.cs2[1]].imshow(tensor.view(4, 4), cmap='gray')
-            plt.show()
-        out = self.relu(self.l1(out.view(-1, self.feature_size)))
-        out = self.relu(self.l2(out))
-        return out
+    def forward(self, x):
+        x = self.dropout1(self.pool(self.relu(self.conv1(x.view(-1, 1, 28, 28)))))
+        x = self.dropout2(self.pool(self.relu(self.conv2(x))))
+        x = self.relu(self.l1(x.view(-1, self.feature_size)))
+        x = self.relu(self.l2(x))
+        return x
 
 
 net = Net((4, 8), (8, 8)).to('cuda')
@@ -123,13 +103,13 @@ for epoch in range(5):
     test(net, 'cuda', test_loader)
     scheduler.step()
 
-exit()
+
 running_count = 0
 running_correct_count = 0
 net.eval()
 for data, label in test_loader:
 
-    output = np.argmax(net(data.to('cuda'), False).to('cpu').detach(), 1)
+    output = np.argmax(net(data.to('cuda')).to('cpu').detach(), 1)
 
     correct_count = 0
     for t in output - label:
@@ -140,3 +120,12 @@ for data, label in test_loader:
     print(round(100 * correct_count/test_loader.batch_size, 2))
     print(round(100 * running_correct_count/(running_count*test_loader.batch_size), 2))
     print()
+
+'''
+if show:
+    a = out[0].detach().to('cpu')
+    f, axarr = plt.subplots(*self.cs1)
+    for i, tensor in enumerate(a):
+        axarr[floor(i/self.cs1[1]), i%self.cs1[1]].imshow(tensor.view(13, 13), cmap='gray')
+    plt.show()
+'''
