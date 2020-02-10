@@ -1,11 +1,13 @@
 import numpy as np
 import torch.optim as optim
-from torch import Tensor, no_grad
-from torch.nn import Module, Linear, Conv2d, ReLU, MaxPool2d, Dropout2d
-from torch.nn.functional import mse_loss, nll_loss
+from torch import Tensor, no_grad, cat
+from torch.nn import Module, Linear, Conv2d, ReLU, MaxPool2d
+from torch.nn.functional import mse_loss, nll_loss, dropout2d
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
+
+import matplotlib.pyplot as plt
 
 batch_size = 50
 
@@ -32,21 +34,14 @@ def convToLinCalc(input_size:tuple, layers) -> np.array:
 
 class Net(Module):
 
-    def __init__(self, first_conv_size=(4, 4), second_conv_size=(8,8)):
+    def __init__(self, input_size=(1, 28, 28)):
         super().__init__()
-        self.cs1 = first_conv_size
-        self.cs2 = second_conv_size
 
-        self.conv1 = Conv2d(1, self.cs1[0] * self.cs1[1], 3)
-        self.dropout1 = Dropout2d(0.25)
-        self.conv2 = Conv2d(self.cs1[0] * self.cs1[1], self.cs2[0] * self.cs2[1], 3)
-        self.dropout2 = Dropout2d(0.5)
-        #self.conv2 = Conv2d(self.cs1[0] * self.cs1[1], self.cs2[0] * self.cs2[1], 3, 1)
-        #self.dropout2 = Dropout2d(0.5)
+        self.conv1 = Conv2d(1, 32, 3)
+        self.conv2 = Conv2d(32, 64, 3)
         self.pool = MaxPool2d(2)
 
         out_size = convToLinCalc((1, 28, 28), [self.conv1, self.pool, self.conv2, self.pool])
-        print(out_size)
 
         self.feature_size = int(np.prod(out_size))
 
@@ -55,14 +50,14 @@ class Net(Module):
         self.relu = ReLU()
 
     def forward(self, x):
-        x = self.dropout1(self.pool(self.relu(self.conv1(x.view(-1, 1, 28, 28)))))
-        x = self.dropout2(self.pool(self.relu(self.conv2(x))))
+        x = dropout2d(self.pool(self.relu(self.conv1(x.view(-1, 1, 28, 28)))), .5)
+        x = dropout2d(self.pool(self.relu(self.conv2(x))), 0.5)
         x = self.relu(self.l1(x.view(-1, self.feature_size)))
         x = self.relu(self.l2(x))
         return x
 
 
-net = Net((4, 8), (8, 8)).to('cuda')
+net = Net().to('cuda')
 optimizer = optim.Adam(net.parameters(), 0.0001)
 
 scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
@@ -103,7 +98,6 @@ for epoch in range(5):
     test(net, 'cuda', test_loader)
     scheduler.step()
 
-
 running_count = 0
 running_correct_count = 0
 net.eval()
@@ -112,9 +106,14 @@ for data, label in test_loader:
     output = np.argmax(net(data.to('cuda')).to('cpu').detach(), 1)
 
     correct_count = 0
-    for t in output - label:
+    for i, t in enumerate(output - label):
         if t == 0:
             correct_count += 1
+        else:
+            print(label[i])
+            print(output[i])
+            plt.imshow(data[i].view(28, 28), cmap='gray')
+            plt.show()
     running_correct_count += correct_count
     running_count += 1
     print(round(100 * correct_count/test_loader.batch_size, 2))
