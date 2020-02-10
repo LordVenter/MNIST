@@ -89,7 +89,7 @@ def test(model, device, test_loader):
 
     test_loss /= len(test_loader.dataset)
 
-    print(f'\nTest set: Average loss: {test_loss}, Accuracy: {correct}/{len(test_loader.dataset)} ({100. * correct / len(test_loader.dataset)}%)\n')
+    print(f'\nTest set: Average lss: {test_loss}, Accuracy: {correct}/{len(test_loader.dataset)} ({100. * correct / len(test_loader.dataset)}%)\n')
 
 
 for epoch in range(5):
