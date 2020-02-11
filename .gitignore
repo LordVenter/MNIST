@@ -136,3 +136,4 @@ dmypy.json
 
 # Save files
 /mnist_cnn.pt
+/savefile.pt
